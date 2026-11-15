@@ -1,6 +1,6 @@
 # Environment
 
-All configuration comes from the root `.env`, created from `.env.example`. Compose passes the values it needs into each container. Per-service `*/​.env.example` files exist for running a service outside Docker.
+All configuration comes from the root `.env`, created from `.env.example`. Compose passes the values it needs into each container. Per-service `.env.example` files next to each service exist for running a service outside Docker.
 
 Never commit `.env`, `.keys/` or any credential. `.gitignore` covers `.env`, `.env.*` (templates excluded), `.keys` and `*.pem`.
 
