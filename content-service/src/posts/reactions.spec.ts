@@ -5,6 +5,7 @@ describe('PostsService reactions logic', () => {
   let mockDb: any;
   let mockEvents: any;
   let mockUsers: any;
+  let mockBlocks: any;
 
   beforeEach(() => {
     mockDb = {
@@ -25,8 +26,10 @@ describe('PostsService reactions logic', () => {
     };
     mockEvents = { publish: jest.fn().mockResolvedValue(true) };
     mockUsers = { batch: jest.fn().mockResolvedValue(new Map()) };
+    // Block policy: `visible()` consults this; no blocks in these fixtures.
+    mockBlocks = { hiddenIds: jest.fn().mockResolvedValue([]), isBlockedEitherWay: jest.fn().mockResolvedValue(false) };
 
-    service = new PostsService(mockDb as any, mockEvents as any, mockUsers as any);
+    service = new PostsService(mockDb as any, mockEvents as any, mockUsers as any, mockBlocks as any);
   });
 
   it('increments likes count and creates reaction when user reacts for the first time', async () => {

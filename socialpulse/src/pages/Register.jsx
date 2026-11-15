@@ -17,7 +17,8 @@ export default function Register() {
           <h1 className="mt-4 text-2xl font-bold tracking-tight">Join SocialPulse</h1>
           <p className="mt-1 text-sm text-gray-500">Share what's happening, in realtime.</p>
         </div>
-        <form onSubmit={submit} className="space-y-3 rounded-2xl border border-gray-200/70 bg-white/90 p-5 shadow-card backdrop-blur">
+        <div className="space-y-3 rounded-2xl border border-gray-200/70 bg-white/90 p-5 shadow-card backdrop-blur">
+          <form onSubmit={submit} className="space-y-3">
           <input value={f.displayName} onChange={set("displayName")} placeholder="Display name" className="field" />
           <input value={f.handle} onChange={set("handle")} placeholder="@handle (a-z, 0-9, _)" autoCapitalize="none" className="field" />
           <input type="email" value={f.email} onChange={set("email")} placeholder="Email" autoComplete="email" className="field" />
@@ -25,7 +26,8 @@ export default function Register() {
           <button disabled={busy || f.password.length < 8 || !f.handle || !f.email || !f.displayName} className="btn-primary">
             {busy ? "Creating…" : "Create account"}
           </button>
-        </form>
+          </form>
+        </div>
         <p className="mt-4 text-center text-sm text-gray-500">
           Have an account? <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500">Sign in</Link>
         </p>

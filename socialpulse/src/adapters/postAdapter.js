@@ -1,3 +1,7 @@
+/** Video URLs come from the same media bucket; the extension decides how to render them. */
+const VIDEO_RE = /\.(mp4|webm|ogv|mov|m4v)(\?|#|$)/i;
+export const isVideoUrl = (url) => typeof url === "string" && VIDEO_RE.test(url);
+
 export function toUiPost(p) {
   if (!p) return null;
   const authorName = p.author?.displayName || p.author?.username || p.author?.handle || "User";
@@ -22,7 +26,14 @@ export function toUiPost(p) {
     author: {
       id: p.author?.id,
       name: authorName,
-      handle: p.author?.handle ? `@${p.author.handle}` : `@${authorName}`,
+      // Raw API fields (a bare handle, no "@"): components render the "@" themselves, so
+      // pre-prefixing it here produced a doubled "@@handle" on every card.
+      displayName: p.author?.displayName || authorName,
+      username: p.author?.username || p.author?.handle || null,
+      handle: p.author?.handle || p.author?.username || authorName,
+      avatarUrl: p.author?.avatarUrl || null,
+      isSelf: !!p.author?.isSelf,
+      isFollowing: !!p.author?.isFollowing,
       initials,
       avatarBg,
       verified: !!p.author?.verified,
@@ -33,8 +44,15 @@ export function toUiPost(p) {
     mediaUrls: p.mediaUrls || [],
     mediaUrl: p.mediaUrls?.[0] || null,
     visibility: p.visibility || "public",
+    isVideo: isVideoUrl(p.mediaUrls?.[0] ?? p.mediaUrl),
     likes: p.likes ?? 0,
     isLiked: !!p.isLiked,
+    // These three were being dropped here, which made the UI lie: comment counts fell back to the
+    // two comments embedded in the feed payload, bookmarks looked empty after every reload and the
+    // share control had no number to show.
+    commentsCount: p.commentsCount ?? (p.comments?.length ?? 0),
+    sharesCount: p.sharesCount ?? 0,
+    isBookmarked: !!p.isBookmarked,
     comments: p.comments || [],
     gradientStyle,
     createdAt: p.createdAt,

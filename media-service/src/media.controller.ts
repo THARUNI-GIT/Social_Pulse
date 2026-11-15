@@ -3,10 +3,14 @@ import { ApiHeader, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { IsIn, IsInt, IsString, Max, Min } from 'class-validator';
 import { Ctx, HeaderAuthGuard, Me } from './common/header-auth';
 import { MediaService } from './media.service';
+import { LIMITS } from './rules';
+// The hard ceiling is the largest per-kind limit, so this decorator cannot drift away from the
+// rules module. The kind-specific limit (and the exact FILE_TOO_LARGE code) is enforced in rules.ts.
+const MAX_ANY_BYTES = Math.max(...Object.values(LIMITS).map((l) => l.maxBytes));
 class PresignDto {
-  @ApiProperty({ enum: ['avatar', 'post'] }) @IsIn(['avatar', 'post']) kind: 'avatar' | 'post';
+  @ApiProperty({ enum: ['avatar', 'post', 'video'] }) @IsIn(['avatar', 'post', 'video']) kind: 'avatar' | 'post' | 'video';
   @ApiProperty({ example: 'image/png' }) @IsString() contentType: string;
-  @ApiProperty({ description: 'bytes' }) @IsInt() @Min(1) @Max(50 * 1024 * 1024) size: number;
+  @ApiProperty({ description: 'bytes' }) @IsInt() @Min(1) @Max(MAX_ANY_BYTES) size: number;
 }
 class DeleteDto { @ApiProperty({ example: 'post/<userId>/<uuid>.png' }) @IsString() key: string; }
 @ApiTags('media') @ApiHeader({ name: 'x-user-id' }) @Controller()

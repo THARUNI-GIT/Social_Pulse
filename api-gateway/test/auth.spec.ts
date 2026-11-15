@@ -35,12 +35,16 @@ describe('gateway auth', () => {
     for (const u of ['/users/batch', '/users/batch/', '/users/%62atch', '/users/batch?x=1', '//users/batch']) expect(isInternalOnly(u)).toBe(true);
     for (const u of ['/users/me', '/users/batchfoo', '/users/11111111-1111-1111-1111-111111111111']) expect(isInternalOnly(u)).toBe(false);
   });
+  it('keeps the internal admin/suspended lookups off the public gateway', () => {
+    for (const u of ['/users/admins', '/users/suspended', '/users/admins/', '//users/admins']) expect(isInternalOnly(u)).toBe(true);
+    expect(isKnownRoute('/users/admins')).toBe(true); // known, then rejected as internal
+  });
   it('parses TRUST_PROXY safely (off by default)', () => {
     expect(parseTrustProxy(undefined)).toBe(false); expect(parseTrustProxy('false')).toBe(false); expect(parseTrustProxy('true')).toBe(true);
     expect(parseTrustProxy('1')).toBe(1); expect(parseTrustProxy('nonsense')).toBe(false); expect(parseTrustProxy('-3')).toBe(false);
   });
   it('knows which routes exist, so unknown paths get 404 instead of a misleading 401', () => {
-    for (const u of ['/auth/login', '/users', '/users/me', '/posts', '/conversations/abc/messages', '/notifications/socket.io/?EIO=4&transport=polling', '/media/uploads', '/admin/reports', '/health', '/socket.io/?EIO=4', '//admin']) expect(isKnownRoute(u)).toBe(true);
+    for (const u of ['/auth/login', '/users', '/users/me', '/posts', '/comments/abc/reactions', '/conversations/abc/messages', '/notifications/socket.io/?EIO=4&transport=polling', '/media/uploads', '/admin/reports', '/health', '/socket.io/?EIO=4', '//admin']) expect(isKnownRoute(u)).toBe(true);
     for (const u of ['/nope', '/api/docs', '/usersx', '/favicon.ico', '/administrator']) expect(isKnownRoute(u)).toBe(false);
   });
 });

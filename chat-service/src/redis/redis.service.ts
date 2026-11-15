@@ -17,6 +17,9 @@ export class RedisService implements OnModuleDestroy {
       try {
         this.pub = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: null, retryStrategy: (times) => Math.min(times * 100, 3000) });
         this.sub = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: null, retryStrategy: (times) => Math.min(times * 100, 3000) });
+        // A dropped connection must not surface as an unhandled 'error' event; retryStrategy reconnects.
+        this.pub.on('error', (e: any) => this.log.warn(`redis pub error: ${e?.message ?? e}`));
+        this.sub.on('error', (e: any) => this.log.warn(`redis sub error: ${e?.message ?? e}`));
         this.isIoRedis = true;
       } catch (e: any) {
         if (isProd) {

@@ -16,11 +16,14 @@ export default function Login() {
           <h1 className="mt-4 text-2xl font-bold tracking-tight">Welcome back</h1>
           <p className="mt-1 text-sm text-gray-500">Sign in to catch up on what's happening.</p>
         </div>
-        <form onSubmit={submit} className="space-y-3 rounded-2xl border border-gray-200/70 bg-white/90 p-5 shadow-card backdrop-blur">
+        <div className="space-y-3 rounded-2xl border border-gray-200/70 bg-white/90 p-5 shadow-card backdrop-blur">
+          <form onSubmit={submit} className="space-y-3">
           <input value={id} onChange={(e) => setId(e.target.value)} placeholder="Email or handle" autoComplete="username" className="field" />
           <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Password" autoComplete="current-password" className="field" />
           <button disabled={busy || !id || !pw} className="btn-primary">{busy ? "Signing in…" : "Sign in"}</button>
-        </form>
+          <p className="text-right"><Link to="/forgot-password" className="text-xs font-medium text-indigo-600 hover:text-indigo-500">Forgot password?</Link></p>
+          </form>
+        </div>
         <p className="mt-4 text-center text-sm text-gray-500">
           New here? <Link to="/register" className="font-medium text-indigo-600 hover:text-indigo-500">Create an account</Link>
         </p>

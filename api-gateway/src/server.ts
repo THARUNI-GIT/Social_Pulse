@@ -10,6 +10,24 @@ const env = (k: string, d: string) => process.env[k] ?? d;
 const app = Fastify({ logger: { level: 'info' }, genReqId: (req) => String(req.headers['x-request-id'] ?? randomUUID()), trustProxy: parseTrustProxy(process.env.TRUST_PROXY) });
 const fail = (code: string, message: string) => ({ success: false, error: { code, message } });
 
+/**
+ * Suspended accounts, refreshed from user-service. Access tokens are stateless and last 15 minutes,
+ * so without this a suspended user keeps full API access until their token expires. Polling keeps
+ * the worst case at one refresh interval instead of a quarter of an hour, and it is enforced here
+ * (the single entry point) rather than in six services.
+ */
+const suspendedUsers = new Set<string>();
+async function refreshSuspended() {
+  try {
+    const r = await fetch(`${env('USER_SERVICE_URL', 'http://user-service:3003')}/users/suspended`, { signal: AbortSignal.timeout(3000) });
+    if (!r.ok) return;
+    const body: any = await r.json();
+    const ids: string[] = body?.data?.items ?? body?.items ?? [];
+    suspendedUsers.clear();
+    for (const id of ids) suspendedUsers.add(String(id));
+  } catch { /* user-service down: keep the last known set rather than unblocking everyone */ }
+}
+
 async function main() {
   const origins = parseOrigins(process.env.CORS_ORIGINS);
   await app.register(cors, { origin: (o, cb) => cb(null, !o || origins.includes(o)), credentials: true });
@@ -29,6 +47,9 @@ async function main() {
     const t = bearer(req.headers.authorization); let id: Identity | null = null;
     if (t) { id = verify(t); if (!id) return reply.code(401).send(fail('UNAUTHORIZED', 'Invalid or expired token')); }
     if (!id && !isPublic(req.method, req.url)) return reply.code(401).send(fail('UNAUTHORIZED', 'Authentication required'));
+    if (id && !isPublic(req.method, req.url) && suspendedUsers.has(id.userId)) {
+      return reply.code(403).send(fail('ACCOUNT_SUSPENDED', 'This account is suspended'));
+    }
     if (needsAdmin(req.url) && !id?.roles.includes('admin')) return reply.code(403).send(fail('FORBIDDEN', 'Admin only'));
     (req as any).identity = id;
   });
@@ -45,14 +66,24 @@ async function main() {
   await app.register(async (s) => {
     await s.register(rateLimit, { max: +env('AUTH_RATE_LIMIT_MAX', '10'), timeWindow: '1 minute', errorResponseBuilder: () => ({ ...fail('RATE_LIMITED', 'Too many attempts, slow down'), statusCode: 429 }) });
     await s.register(proxy, { upstream: env('USER_SERVICE_URL', 'http://user-service:3003'), prefix: '/auth', rewritePrefix: '/auth', replyOptions: { rewriteRequestHeaders: rewrite } });
+    // `/api/auth` is the same auth surface under the alias prefix: Google Cloud Console redirect
+    // URIs are commonly registered as /api/auth/..., and OAuth only works when the URI matches
+    // byte-for-byte. Both prefixes reach the same handlers; authorization rules are unchanged.
+    await s.register(proxy, { upstream: env('USER_SERVICE_URL', 'http://user-service:3003'), prefix: '/api/auth', rewritePrefix: '/auth', replyOptions: { rewriteRequestHeaders: rewrite } });
   });
   await route('/users', env('USER_SERVICE_URL', 'http://user-service:3003'));
   await route('/posts', env('CONTENT_SERVICE_URL', 'http://content-service:3001'));
+  // Comment edit / delete / like live on their own controller; without this route they 404 at the
+  // gateway even though the service implements them.
+  await route('/comments', env('CONTENT_SERVICE_URL', 'http://content-service:3001'));
   await route('/conversations', env('CHAT_SERVICE_URL', 'http://chat-service:3002'));
   await route('/notifications', env('NOTIFICATION_SERVICE_URL', 'http://notification-service:3004'), { websocket: true }); // REST + /notifications/socket.io
   await route('/media', env('MEDIA_SERVICE_URL', 'http://media-service:3005'));
   await route('/admin/users', env('USER_SERVICE_URL', 'http://user-service:3003'));
   await route('/admin/reports', env('CONTENT_SERVICE_URL', 'http://content-service:3001'));
+  // Admin review of reported content (removed posts included) + restore.
+  await route('/admin/posts', env('CONTENT_SERVICE_URL', 'http://content-service:3001'));
+  await route('/admin/comments', env('CONTENT_SERVICE_URL', 'http://content-service:3001'));
   // Aggregate admin dashboard numbers from the services that own the data.
   app.get('/admin/overview', async (req, reply) => {
     const id: Identity = (req as any).identity; const h = { 'x-user-id': id.userId, 'x-user-roles': id.roles.join(','), 'x-request-id': req.id };
@@ -65,6 +96,8 @@ async function main() {
   await route('/socket.io', env('CHAT_SERVICE_URL', 'http://chat-service:3002'), { websocket: true });
 
   app.setNotFoundHandler((_r, reply) => reply.code(404).send(fail('NOT_FOUND', 'Route not found')));
+  await refreshSuspended();
+  setInterval(() => void refreshSuspended(), 15_000);
   await app.listen({ port: +env('PORT', '8080'), host: '0.0.0.0' });
 }
 main().catch((e) => { console.error(e); process.exit(1); });

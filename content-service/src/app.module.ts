@@ -3,6 +3,7 @@ import { PrismaService } from './common/prisma.service';
 import { EventsService } from './events/events.service';
 import { UserClient } from './users/user-client.service';
 import { FollowsConsumer } from './users/follows.consumer';
+import { BlocksService } from './blocks/blocks.service';
 import { PostsController } from './posts/posts.controller';
 import { CommentsController } from './posts/comments.controller';
 import { PostsService } from './posts/posts.service';
@@ -17,6 +18,7 @@ import { HealthController } from './health.controller';
     EventsService,
     UserClient,
     FollowsConsumer,
+    BlocksService,
     PostsService,
   ],
 })

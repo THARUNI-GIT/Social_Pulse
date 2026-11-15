@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import * as auth from "../services/authService";
 import { getSession, getToken, setSession } from "../services/session";
+import { resetSocket } from "../websocket/socket";
 
 const Ctx = createContext(null);
 export const useAuth = () => useContext(Ctx);
@@ -21,8 +22,10 @@ export function AuthProvider({ children }) {
     return () => { alive = false; };
   }, []);
 
+  // A forced logout (refresh token rejected) must also drop the realtime identity, otherwise the
+  // socket keeps acting as the previous user until the tab is reloaded.
   useEffect(() => {
-    const h = () => setUser(null);
+    const h = () => { setUser(null); resetSocket(); };
     window.addEventListener("auth:logout", h);
     return () => window.removeEventListener("auth:logout", h);
   }, []);
@@ -39,8 +42,18 @@ export function AuthProvider({ children }) {
     return d.user;
   }, []);
 
+  /** Adopts a session produced elsewhere (the Google OAuth callback page). */
+  const adopt = useCallback((d) => {
+    if (!d?.user) return null;
+    setUser(d.user);
+    return d.user;
+  }, []);
+
   const logout = useCallback(async () => {
     await auth.logout(); // best-effort server call, then clears the local session
+    // Drop the socket before clearing the session: it authenticated with the old token, and a
+    // later login in this tab must not inherit that identity.
+    resetSocket();
     setUser(null);
   }, []);
 
@@ -53,8 +66,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, ready, isAdmin: !!user?.roles?.includes("admin"), login, register, logout, updateUser }),
-    [user, ready, login, register, logout, updateUser]
+    () => ({ user, ready, isAdmin: !!user?.roles?.includes("admin"), login, register, adopt, logout, updateUser }),
+    [user, ready, login, register, adopt, logout, updateUser]
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

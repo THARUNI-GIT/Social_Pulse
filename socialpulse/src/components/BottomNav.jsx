@@ -2,14 +2,26 @@ import { NavLink } from "react-router-dom";
 import { Bell, Home, MessageCircle, Search, User } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useNotifications } from "../context/NotificationsContext";
+import { useChatUnread } from "../context/ChatUnreadContext";
+
+function Badge({ count }) {
+  if (!count) return null;
+  return (
+    <span key={count} className="absolute -top-0.5 -right-0.5 min-w-[18px] animate-pop rounded-full bg-rose-500 px-1 text-center text-[10px] font-bold text-white ring-2 ring-white">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
 
 export default function BottomNav() {
-  const { user } = useAuth(); const { unread } = useNotifications();
-  const items = [["/", Home], ["/search", Search], ["/chat", MessageCircle], ["/notifications", Bell], [`/profile/${user?.id}`, User]];
+  const { user } = useAuth();
+  const { unread } = useNotifications();
+  const { total: chatUnread } = useChatUnread();
+  const items = [[ "/", Home, 0], ["/search", Search, 0], ["/chat", MessageCircle, chatUnread], ["/notifications", Bell, unread], [`/profile/${user?.id}`, User, 0]];
   return (
     <nav className="fixed bottom-0 inset-x-0 z-40 border-t border-gray-200/70 bg-white/85 backdrop-blur-md shadow-nav pb-[env(safe-area-inset-bottom)]">
       <ul className="max-w-xl mx-auto flex justify-around py-2">
-        {items.map(([to, Icon]) => (
+        {items.map(([to, Icon, badge]) => (
           <li key={to}>
             <NavLink
               to={to}
@@ -20,11 +32,7 @@ export default function BottomNav() {
               style={({ isActive }) => ({ width: 44, height: 36, background: isActive ? "rgba(99,102,241,.10)" : "transparent" })}
             >
               <Icon size={22} strokeWidth={2.1} />
-              {to === "/notifications" && unread > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] rounded-full bg-rose-500 px-1 text-center text-[10px] font-bold text-white ring-2 ring-white">
-                  {unread > 99 ? "99+" : unread}
-                </span>
-              )}
+              <Badge count={badge} />
             </NavLink>
           </li>
         ))}

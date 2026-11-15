@@ -5,12 +5,14 @@ import { ConversationsService } from './conversations.service';
 import { ConversationsController } from './conversations.controller';
 import { BlocksModule } from '../blocks/blocks.module';
 import { MessagesModule } from '../messages/messages.module';
+import { PresenceModule } from '../redis/presence.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Conversation.name, schema: ConversationSchema }]),
     BlocksModule,
     MessagesModule,
+    PresenceModule,
   ],
   controllers: [ConversationsController],
   providers: [ConversationsService],

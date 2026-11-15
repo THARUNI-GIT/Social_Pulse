@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, Logger, OnModuleInit } from '@nestjs/co
 import { randomUUID } from 'crypto';
 import * as Minio from 'minio';
 import { Kind, LIMITS, objectKey, ownsKey, validateUpload } from './rules';
+import { putBucketCors } from './bucket-cors';
 const TTL = 300;
 @Injectable()
 export class MediaService implements OnModuleInit {
@@ -20,9 +21,32 @@ export class MediaService implements OnModuleInit {
         if (!(await this.admin.bucketExists(this.bucket))) await this.admin.makeBucket(this.bucket, this.base.region);
         // public read for objects only (uploads/deletes still need signed access)
         await this.admin.setBucketPolicy(this.bucket, JSON.stringify({ Version: '2012-10-17', Statement: [{ Effect: 'Allow', Principal: { AWS: ['*'] }, Action: ['s3:GetObject'], Resource: [`arn:aws:s3:::${this.bucket}/*`] }] }));
+        await this.ensureBucketCors();
         return;
       } catch (e: any) { this.log.warn(`minio not ready (${e.message}); retry ${i + 1}`); await new Promise((r) => setTimeout(r, 2000)); }
     }
+  }
+
+  /**
+   * Browsers will not send the presigned multipart POST unless the bucket answers the preflight.
+   * Without this every in-app upload fails with an opaque "Failed to fetch" while curl/node succeed,
+   * which is exactly the symptom we fixed.
+   */
+  private async ensureBucketCors() {
+    const origins = (process.env.CORS_ORIGINS ?? 'http://localhost:5173,http://localhost:8080,http://localhost:8180')
+      .split(',').map((s) => s.trim()).filter(Boolean);
+    if (!origins.length) { this.log.warn('CORS_ORIGINS is empty: browser uploads will be blocked'); return; }
+    const status = await putBucketCors({
+      // Must target the storage host reachable FROM this container (not the browser-facing one).
+      endpoint: `${process.env.MINIO_USE_SSL === 'true' ? 'https' : 'http'}://${process.env.MINIO_ENDPOINT ?? 'localhost'}:${process.env.MINIO_PORT ?? 9000}`,
+      bucket: this.bucket,
+      accessKey: this.base.accessKey,
+      secretKey: this.base.secretKey,
+      region: this.base.region,
+      origins,
+    }).catch((e) => { this.log.warn(`bucket CORS could not be set: ${e.message}`); return 0; });
+    if (status && status >= 400) this.log.warn(`bucket CORS returned ${status}; browser uploads may fail`);
+    else if (status) this.log.log(`bucket CORS allows ${origins.join(', ')}`);
   }
 
   /** Presigned POST policy: MinIO itself enforces content-type and the size range, so limits can't be bypassed client-side. */

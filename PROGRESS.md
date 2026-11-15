@@ -1,4 +1,20 @@
 # PROGRESS
+
+## 2026-10-14 (latest pass)
+- Auth: email verification + password reset (single-use hashed expiring tokens, SMTP from env,
+  `AUTH_DEV_RETURN_LINKS` local path). Migration `0003_auth_tokens`.
+- Search: `GET /posts/search` (caption + hashtag, visibility-scoped), user search is now substring
+  on handle and display name; Search page has People/Posts tabs.
+- Media: video uploads (50MB, strict MIME allowlist) + video previews in cards and grids.
+- Chat: reaction picker, unread badge (`GET /conversations/unread` + `ChatUnreadContext`), blocked
+  contact notice, profile links, duplicate nav entry removed, **groups** (create/rename/add/remove/
+  leave, membership authz, realtime events, member panel).
+- Blocking: authoritative `POST /users/blocks/check` fallback closes the event-replica race.
+- Feed/profiles: shared `PostCard`, clickable posts (`/post/:id`), author links, working follow
+  button (`author.isSelf`/`isFollowing` from the replicated graph), follower/following lists.
+- Verified: 61 unit tests, 67/67 `scripts/integration-fixes.mjs`, 50/50 `scripts/e2e.mjs`,
+  frontend build, browser walkthrough. Details: [docs/IMPLEMENTATION-2026-10-14.md](docs/IMPLEMENTATION-2026-10-14.md).
+
 - [x] Step 1: user-service + follower-aware visibility in content-service
 - [x] Step 2: api-gateway
 - [x] Step 3: notification-service

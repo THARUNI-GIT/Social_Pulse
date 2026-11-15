@@ -1,0 +1,27 @@
+#!/bin/sh
+FILE=/tmp/sp-index.html
+
+cat > "$FILE" <<'EOF'
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#4f46e5" />
+    <meta name="description" content="SocialPulse — a social feed with realtime chat, notifications and media uploads." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%234f46e5'/%3E%3Cstop offset='1' stop-color='%239333ea'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M12 34h11l6-13h8l8 26h9' fill='none' stroke='white' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
+    <title>SocialPulse</title>
+    <script type="module" crossorigin src="/assets/index-DSs3s4Ot.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-ChfzD1NY.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
+EOF
+
+docker compose -f /workspace/docker-compose.yml exec -T frontend sh -c 'cp /tmp/sp-index.html /usr/share/nginx/html/index.html && nginx -s reload && echo reloaded' || true
+rm -f "$FILE"

@@ -2,6 +2,8 @@ import axios from "axios";
 import { getRefreshToken, getSession, getToken, setSession } from "./session";
 
 const base = import.meta.env.VITE_API_URL;
+// Exported so full-page flows (the OAuth consent redirect) can build an absolute URL.
+export const API_BASE = String(base || "").replace(/\/+$/, "");
 const api = axios.create({ baseURL: base });
 api.interceptors.request.use((cfg) => { const t = getToken(); if (t) cfg.headers.Authorization = `Bearer ${t}`; return cfg; });
 

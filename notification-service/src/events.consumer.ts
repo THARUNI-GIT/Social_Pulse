@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { NotificationsService } from './notifications.service';
 import { RetryingConsumer } from './common/amqp-consumer';
 
-export const KEYS = ['post.liked', 'comment.created', 'post.shared', 'user.followed', 'message.sent'];
+export const KEYS = ['post.liked', 'comment.created', 'post.shared', 'user.followed', 'message.sent', 'report.created', 'report.resolved', 'post.moderated', 'comment.moderated'];
 
 /** Turns `app.events` messages into notifications. Retries the broker connection forever (see RetryingConsumer). */
 @Injectable()

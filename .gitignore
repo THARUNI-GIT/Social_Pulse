@@ -11,3 +11,11 @@ batch.json
 login.json
 login2.json
 reg.json
+
+# database dumps created before any approved cleanup
+backups/
+.env.bak
+.env.bak.*
+
+# throwaway probes left by debugging sessions
+/tmp-*

@@ -6,6 +6,8 @@ export const searchUsers = (q, cursor) => c(api.get("/users/search", { params: {
 export const follow = (id, on) => c(on ? api.post(`/users/${id}/follow`) : api.delete(`/users/${id}/follow`));
 export const block = (id, on) => c(on ? api.post(`/users/${id}/block`) : api.delete(`/users/${id}/block`));
 export const listBlocks = () => c(api.get("/users/me/blocks"));
+export const followers = (id, cursor) => c(api.get(`/users/${id}/followers`, { params: { cursor, limit: 30 } }));
+export const following = (id, cursor) => c(api.get(`/users/${id}/following`, { params: { cursor, limit: 30 } }));
 // admin
 export const adminOverview = () => c(api.get("/admin/overview"));
 export const adminReports = (status = "open") => c(api.get("/admin/reports", { params: { status } }));

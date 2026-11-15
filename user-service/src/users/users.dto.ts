@@ -10,5 +10,12 @@ export class PageDto {
   @ApiPropertyOptional() @IsOptional() @IsString() cursor?: string;
   @ApiPropertyOptional({ default: 20 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number;
 }
-export class SearchDto extends PageDto { @ApiProperty() @Transform(({ value }) => String(value ?? '').trim()) @IsString() @Length(1, 50) q: string; }
+// A blank term is allowed on purpose: search is driven by a live-as-you-type box, so an empty or
+// whitespace-only query must return an empty page rather than a 400.
+export class SearchDto extends PageDto { @ApiProperty() @Transform(({ value }) => String(value ?? '').trim()) @IsString() @Length(0, 50) q: string; }
 export class BatchDto { @ApiProperty({ type: [String] }) @IsArray() @ArrayMaxSize(200) @IsUUID('all', { each: true }) ids: string[]; }
+/** Internal: chat-service asks whether two users block each other (not routed by the gateway). */
+export class BlockCheckDto {
+  @ApiProperty() @IsUUID('all') a: string;
+  @ApiProperty() @IsUUID('all') b: string;
+}

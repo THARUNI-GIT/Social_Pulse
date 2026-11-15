@@ -21,14 +21,30 @@ export class PostsController {
   }
 
   @Get()
-  list(@Me() m: Ctx, @Query('cursor') cursor?: string, @Query('limit') limit?: string, @Query('authorId') authorId?: string) {
-    return this.posts.list(m.userId, pg({ cursor, limit }), authorId);
+  list(
+    @Me() m: Ctx,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+    @Query('authorId') authorId?: string,
+    @Query('feed') feed?: string,
+  ) {
+    return this.posts.list(m.userId, pg({ cursor, limit }), authorId, feed);
   }
 
   // STATIC ROUTES FIRST (before :id)
+  @Get('search')
+  search(@Me() m: Ctx, @Query('q') q?: string, @Query('cursor') cursor?: string, @Query('limit') limit?: string) {
+    return this.posts.search(m.userId, q, pg({ cursor, limit }));
+  }
+
   @Get('bookmarks')
   bookmarks(@Me() m: Ctx, @Query('cursor') cursor?: string, @Query('limit') limit?: string) {
     return this.posts.bookmarks(m.userId, pg({ cursor, limit }));
+  }
+
+  @Get('trending')
+  trending(@Query('limit') limit?: string) {
+    return this.posts.trending(parseInt(String(limit ?? '10'), 10) || 10);
   }
 
   @Get('hashtags/:tag')

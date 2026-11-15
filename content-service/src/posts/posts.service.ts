@@ -3,8 +3,10 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
 import { EventsService } from '../events/events.service';
 import { UserClient } from '../users/user-client.service';
+import { BlocksService } from '../blocks/blocks.service';
 import { PageQuery, pageArgs, toPage } from '../common/pagination';
 import { parseHashtags } from './hashtags';
+import { buildPostSearch, normalizeSearchTerm } from './search';
 import { assertMediaUrls } from '../common/media-allowlist';
 import { buildVisibility } from './visibility';
 import { CreatePostDto, UpdatePostDto } from './dto/post.dto';
@@ -14,12 +16,36 @@ type PostRow = Prisma.PostGetPayload<{ include: typeof withTags }>;
 
 @Injectable()
 export class PostsService {
-  constructor(private db: PrismaService, private events: EventsService, private users: UserClient) {}
+  constructor(private db: PrismaService, private events: EventsService, private users: UserClient, private blocks: BlocksService) {}
 
-  /** Visible = not deleted AND (public | own | followers-only for authors the viewer follows; follows replicated from user-service events). */
+  /**
+   * Visible = not deleted AND (public | own | followers-only for authors the viewer follows) AND
+   * neither side has blocked the other AND the viewer has not reported it.
+   *
+   * The reported-post filter (see reportedFor) is applied to LISTINGS only, so the post disappears
+   * from the reporter's feed, search and profile lists and stays gone after refresh/re-login, while
+   * a direct permalink still resolves. Other users keep seeing it until an admin removes it.
+   */
   private async visible(userId: string): Promise<Prisma.PostWhereInput> {
-    const rows = await this.db.follow.findMany({ where: { followerId: userId }, select: { followingId: true } });
-    return buildVisibility(userId, rows.map((r) => r.followingId));
+    const [rows, hidden] = await Promise.all([
+      this.db.follow.findMany({ where: { followerId: userId }, select: { followingId: true } }),
+      this.blocks.hiddenIds(userId),
+    ]);
+    return {
+      ...buildVisibility(userId, rows.map((r) => r.followingId)),
+      // Block policy (mutual): hide the other party's posts everywhere in content-service.
+      ...(hidden.length ? { authorId: { notIn: hidden } } : {}),
+    };
+  }
+
+  /**
+   * Posts the viewer has reported are excluded from every listing. Kept out of `visible()` because
+   * that fragment is spread into `get()` after `{ id }`, where a second `id` key would silently
+   * replace the requested post id.
+   */
+  private async reportedFor(userId: string): Promise<Prisma.PostWhereInput> {
+    const rows = await this.db.report.findMany({ where: { reporterId: userId, targetType: 'post' }, select: { targetId: true } });
+    return rows.length ? { id: { notIn: rows.map((r) => r.targetId) } } : {};
   }
 
   async create(userId: string, dto: CreatePostDto) {
@@ -40,12 +66,25 @@ export class PostsService {
   async get(id: string, userId: string) {
     const post = await this.db.post.findFirst({ where: { id, ...(await this.visible(userId)) }, include: withTags });
     if (!post) throw new NotFoundException({ code: 'POST_NOT_FOUND', message: 'Post not found' });
-    return (await this.serialize([post], userId))[0];
+    // Share targets are validated by chat-service, which must know whether this viewer reported it.
+    const reported = await this.db.report.findFirst({ where: { reporterId: userId, targetType: 'post', targetId: id }, select: { id: true } });
+    return { ...(await this.serialize([post], userId))[0], reportedByMe: !!reported };
   }
 
-  async list(userId: string, q: PageQuery, authorId?: string) {
+  /**
+   * Feed / profile listing. `feed=following` restricts the timeline to people the viewer follows
+   * (plus their own posts); anything else is the global visible feed. Filters are ANDed so the
+   * visibility predicate's own `authorId: { notIn: blocked }` is never overwritten.
+   */
+  async list(userId: string, q: PageQuery, authorId?: string, feed?: string) {
+    const filters: Prisma.PostWhereInput[] = [await this.visible(userId), await this.reportedFor(userId)];
+    if (authorId) filters.push({ authorId });
+    else if (feed === 'following') {
+      const rows = await this.db.follow.findMany({ where: { followerId: userId }, select: { followingId: true } });
+      filters.push({ authorId: { in: [...rows.map((r) => r.followingId), userId] } });
+    }
     const rows = await this.db.post.findMany({
-      where: { ...(await this.visible(userId)), ...(authorId ? { authorId } : {}) },
+      where: { AND: filters },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include: withTags, ...pageArgs(q),
     });
     const { items, nextCursor } = toPage(rows, q.limit);
@@ -137,9 +176,30 @@ export class PostsService {
     return { items: await this.serialize(items.map((b) => b.post), userId), nextCursor };
   }
 
+  /** Case-insensitive substring search over captions and hashtags. Always scoped by visibility. */
+  async search(userId: string, rawTerm: unknown, q: PageQuery) {
+    const term = normalizeSearchTerm(rawTerm);
+    if (!term) return { items: [], nextCursor: null };
+    const rows = await this.db.post.findMany({
+      where: { ...(await this.visible(userId)), ...(await this.reportedFor(userId)), ...buildPostSearch(term) },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include: withTags, ...pageArgs(q),
+    });
+    const { items, nextCursor } = toPage(rows, q.limit);
+    return { items: await this.serialize(items, userId), nextCursor };
+  }
+
+  /** Most used hashtags, for the discovery row on the search page. */
+  async trending(limit: number) {
+    const take = Math.min(Math.max(limit || 10, 1), 50);
+    const rows = await this.db.hashtag.findMany({
+      orderBy: [{ usageCount: 'desc' }, { tag: 'asc' }], take, select: { tag: true, usageCount: true },
+    });
+    return { items: rows };
+  }
+
   async byHashtag(tag: string, userId: string, q: PageQuery) {
     const rows = await this.db.post.findMany({
-      where: { ...(await this.visible(userId)), hashtags: { some: { hashtag: { tag: tag.replace(/^#/, '').toLowerCase() } } } },
+      where: { ...(await this.visible(userId)), ...(await this.reportedFor(userId)), hashtags: { some: { hashtag: { tag: tag.replace(/^#/, '').toLowerCase() } } } },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include: withTags, ...pageArgs(q),
     });
     const { items, nextCursor } = toPage(rows, q.limit);
@@ -178,12 +238,14 @@ export class PostsService {
   async listComments(postId: string, userId: string, q: PageQuery) {
     const post = await this.db.post.findFirst({ where: { id: postId, ...(await this.visible(userId)) } });
     if (!post) throw new NotFoundException({ code: 'POST_NOT_FOUND', message: 'Post not found' });
+    const hidden = new Set(await this.blocks.hiddenIds(userId)); // comments by hidden users are omitted
     const rows = await this.db.comment.findMany({
       where: { postId, deletedAt: null },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       ...pageArgs(q),
     });
-    const { items, nextCursor } = toPage(rows, q.limit);
+    const filtered = rows.filter((c) => !hidden.has(c.authorId));
+    const { items, nextCursor } = toPage(filtered, q.limit);
     const authors = await this.users.batch(items.map((c) => c.authorId));
     return {
       items: items.map((c) => ({
@@ -251,23 +313,34 @@ export class PostsService {
   async serialize(posts: PostRow[], userId: string) {
     if (!posts.length) return [];
     const ids = posts.map((p) => p.id);
-    const [liked, recent] = await Promise.all([
+    const [liked, recent, follows, bookmarks] = await Promise.all([
       this.db.reaction.findMany({ where: { userId, targetType: 'post', targetId: { in: ids } }, select: { targetId: true } }),
       Promise.all(ids.map((postId) => this.db.comment.findMany({ where: { postId, parentCommentId: null, deletedAt: null }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 2 }))),
+      // Replicated follow graph: lets the feed render a correct Follow/Unfollow button without N+1 calls.
+      this.db.follow.findMany({ where: { followerId: userId }, select: { followingId: true } }),
+      // Bookmark state has to travel with the post, otherwise it is lost on every reload (the
+      // toggle response alone is not enough).
+      this.db.bookmark.findMany({ where: { userId, postId: { in: ids } }, select: { postId: true } }),
     ]);
     const likedSet = new Set(liked.map((r) => r.targetId));
+    const bookmarkedSet = new Set(bookmarks.map((b) => b.postId));
+    const followingSet = new Set(follows.map((f) => f.followingId));
+    const hidden = await this.blocks.hiddenIds(userId);
+    const hiddenSet = new Set(hidden);
     const authors = await this.users.batch([...posts.map((p) => p.authorId), ...recent.flat().map((c) => c.authorId)]);
     return posts.map((p, i) => ({
       id: p.id,
-      author: UserClient.author(authors, p.authorId),
+      author: { ...UserClient.author(authors, p.authorId), isSelf: p.authorId === userId, isFollowing: followingSet.has(p.authorId) },
       caption: p.caption,
       tags: p.hashtags.map((h) => '#' + h.hashtag.tag),
       mediaUrls: p.mediaUrls as string[],
       visibility: p.visibility,
       likes: p.likesCount,
       isLiked: likedSet.has(p.id),
+      isBookmarked: bookmarkedSet.has(p.id),
+      sharesCount: p.sharesCount,
       commentsCount: p.commentsCount,
-      comments: recent[i].map((c) => ({ id: c.id, user: authors.get(c.authorId)?.username ?? c.authorId, text: c.content })),
+      comments: recent[i].filter((c) => !hiddenSet.has(c.authorId)).map((c) => ({ id: c.id, authorId: c.authorId, user: authors.get(c.authorId)?.username ?? c.authorId, text: c.content })),
       createdAt: p.createdAt,
     }));
   }

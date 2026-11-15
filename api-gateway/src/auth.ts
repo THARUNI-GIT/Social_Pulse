@@ -12,8 +12,12 @@ export function verify(token: string, publicKey = process.env.JWT_PUBLIC_KEY): I
 }
 /** Public (no token needed). Everything else requires a valid bearer. */
 export const isPublic = (method: string, url: string) => {
-  const path = url.split('?')[0];
-  return path === '/health' || path.startsWith('/socket.io') || path.startsWith('/notifications/socket.io') || /^\/auth\/(register|login|refresh|logout)$/.test(path)
+  const raw = url.split('?')[0];
+  const path = raw === '/api' ? '/' : raw.startsWith('/api/') ? raw.slice(4) : raw;
+  return path === '/health' || path.startsWith('/socket.io') || path.startsWith('/notifications/socket.io') || /^\/auth\/(register|login|refresh|logout|verify-email|forgot-password|reset-password)$/.test(path)
+    // Google sign-in: the browser navigates here before any session exists (start/callback are
+    // top-level redirects; `exchange` trades the one-time ticket for tokens).
+    || /^\/auth\/google(\/(available|start|callback|exchange))?$/.test(path)
     || (method === 'GET' && /^\/users\/[0-9a-f-]{36}(\/followers|\/following)?$/i.test(path)); // optional-viewer profile reads
 };
 const INTERNAL = ['x-user-id', 'x-user-roles'];
@@ -34,13 +38,16 @@ export const parseOrigins = (v?: string) => (v ?? '').split(',').map((s) => s.tr
 export const canonicalPath = (url: string) => {
   let p = url.split('?')[0];
   try { p = decodeURIComponent(p); } catch { /* malformed escape: keep raw */ }
-  return p.replace(/\/{2,}/g, '/');
+  p = p.replace(/\/{2,}/g, '/');
+  // `/api` is an alias prefix kept for Google OAuth redirect URIs registered with it. Strip it so
+  // allow/deny decisions are identical under both prefixes (an alias must never widen access).
+  return p === '/api' ? '/' : p.startsWith('/api/') ? p.slice(4) : p;
 };
 /** /admin/* needs role "admin" (services re-check; defence in depth). */
 export const needsAdmin = (url: string) => /^\/admin(\/|$)/i.test(canonicalPath(url));
 /** Service-to-service routes that must never be reachable through the gateway. */
-export const isInternalOnly = (url: string) => /^\/users\/batch\/?$/i.test(canonicalPath(url));
-const KNOWN_PREFIXES = ['/auth', '/users', '/posts', '/conversations', '/notifications', '/media', '/admin', '/health', '/socket.io'];
+export const isInternalOnly = (url: string) => /^\/users\/(batch|admins|suspended|blocks\/check|blocks\/all)\/?$/i.test(canonicalPath(url));
+const KNOWN_PREFIXES = ['/auth', '/users', '/posts', '/comments', '/conversations', '/notifications', '/media', '/admin', '/health', '/socket.io'];
 /** Prefixes this gateway actually routes. Anything else is answered with a plain 404 *before*
  *  auth runs, so probing `/whatever` no longer returns a misleading 401. */
 export const isKnownRoute = (url: string) => {

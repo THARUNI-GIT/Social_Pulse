@@ -1,4 +1,5 @@
 export default {
+  darkMode: "class",
   content: ["./index.html", "./src/**/*.{js,jsx}"],
   theme: {
     extend: {
@@ -12,8 +13,10 @@ export default {
       },
       keyframes: {
         pop: { "0%": { transform: "scale(1)" }, "35%": { transform: "scale(1.3)" }, "100%": { transform: "scale(1)" } },
+        "fade-up": { "0%": { opacity: 0, transform: "translateY(10px)" }, "100%": { opacity: 1, transform: "none" } },
+        shimmer: { "100%": { transform: "translateX(100%)" } },
       },
-      animation: { pop: "pop .35s ease-in-out" },
+      animation: { pop: "pop .35s ease-in-out", "fade-up": "fade-up .3s ease-out both" },
     },
   },
   plugins: [],

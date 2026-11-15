@@ -1,63 +1,54 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bookmark, Heart, MessageCircle, Plus } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
+import { Plus } from "lucide-react";
 import AppLayout from "../layouts/AppLayout";
 import CreateModal from "../components/create/CreateModal";
-import { addComment, listFeed, toggleBookmark, toggleLike, reportPost } from "../services/postsService";
+import PostCard from "../components/PostCard";
+import { listFeed } from "../services/postsService";
 import { toUiPost } from "../adapters/postAdapter";
-import { Flag } from "lucide-react";
+import { EmptyState, PostSkeleton } from "../components/ui";
 
 export default function Home() {
   const [posts, setPosts] = useState([]);
   const [cursor, setCursor] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [drafts, setDrafts] = useState({});
-  const [bookmarked, setBookmarked] = useState({}); // API post has no isBookmarked; tracked locally
   const [creating, setCreating] = useState(false);
+  // "For you" is the global visible feed; "Following" is restricted server-side to accounts you
+  // follow (plus yourself), so it is a real timeline and not a client-side filter.
+  const [feed, setFeed] = useState("for-you");
+  const reduce = useReducedMotion();
 
   const load = useCallback(async (c) => {
     setLoading(true); setError("");
     try {
-      const { items, nextCursor } = await listFeed({ cursor: c, limit: 20 });
-      setPosts((p) => (c ? [...p, ...items.map(toUiPost)] : items.map(toUiPost))); setCursor(nextCursor);
+      const { items, nextCursor } = await listFeed({ cursor: c, limit: 20, feed: feed === "following" ? "following" : undefined });
+      setPosts((p) => (c ? [...p, ...items.map(toUiPost)] : items.map(toUiPost)));
+      setCursor(nextCursor);
     } catch (e) { setError(e.message); } finally { setLoading(false); }
-  }, []);
-  useEffect(() => { load(); }, [load]);
+  }, [feed]);
+  useEffect(() => { setPosts([]); setCursor(null); load(); }, [load]);
 
-  const patch = (id, fn) => setPosts((p) => p.map((x) => (x.id === id ? fn(x) : x)));
-
-  const like = async (post) => {
-    const was = post.isLiked;
-    patch(post.id, (x) => ({ ...x, isLiked: !was, likes: x.likes + (was ? -1 : 1) })); // optimistic
-    try { const r = await toggleLike(post.id, was); patch(post.id, (x) => ({ ...x, isLiked: r.isLiked, likes: r.likes })); }
-    catch { patch(post.id, (x) => ({ ...x, isLiked: was, likes: post.likes })); setError("Couldn't update like"); } // roll back
-  };
-  const comment = async (post) => {
-    const text = (drafts[post.id] || "").trim(); if (!text) return;
-    try { const c = await addComment(post.id, text); patch(post.id, (x) => ({ ...x, comments: [...x.comments, { id: c.id, user: c.user, text: c.text }] })); setDrafts((d) => ({ ...d, [post.id]: "" })); }
-    catch (e) { setError(e.message); }
-  };
-  const bookmark = async (post) => {
-    const was = !!bookmarked[post.id];
-    setBookmarked((b) => ({ ...b, [post.id]: !was }));
-    try { await toggleBookmark(post.id, was); } catch { setBookmarked((b) => ({ ...b, [post.id]: was })); setError("Couldn't update bookmark"); }
-  };
-
-  const report = async (post) => {
-    const reason = window.prompt("Why are you reporting this post? (spam, harassment, hate, violence, nudity, misinformation, other)", "other");
-    if (!reason) return;
-    try {
-      await reportPost(post.id, reason, "Reported by user");
-      alert("Post reported successfully.");
-    } catch (e) {
-      alert("Failed to report post: " + e.message);
-    }
-  };
+  // Keep the list in sync with edits made inside a card (like counts, comments, follow state).
+  const onChange = useCallback((id, patch) => setPosts((p) => p.map((x) => (x.id === id ? { ...x, ...patch } : x))), []);
+  // A confirmed delete removes the row only after the server accepted it.
+  const onDeleted = useCallback((id) => setPosts((p) => p.filter((x) => x.id !== id)), []);
 
   return (
     <AppLayout>
       <div className="max-w-xl mx-auto space-y-4 pb-24">
+        <div className="flex gap-1 rounded-xl border border-gray-200/70 bg-white p-1 shadow-sm">
+          {[["for-you", "For you"], ["following", "Following"]].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setFeed(key)}
+              className={`flex-1 rounded-lg py-1.5 text-sm font-medium transition ${feed === key ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm" : "text-gray-600 hover:bg-gray-50"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="flex items-center gap-3">
           <button onClick={() => setCreating(true)} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:from-indigo-500 hover:to-violet-500">
             <Plus size={16} /> New post
@@ -65,33 +56,26 @@ export default function Home() {
           <Link to="/bookmarks" className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-600">Bookmarks</Link>
         </div>
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-        {loading && !posts.length && <p className="text-sm text-gray-400">Loading…</p>}
-        {!loading && !error && !posts.length && <p className="text-sm text-gray-400">No posts yet.</p>}
-        {posts.map((p) => (
-          <article key={p.id} className="rounded-2xl border border-gray-200/70 bg-white overflow-hidden shadow-card transition hover:shadow-card-hover">
-            <header className="flex items-center gap-3 p-4">
-              <span className={`w-10 h-10 rounded-full ${p.author.avatarBg} flex items-center justify-center text-sm font-semibold text-white shadow-sm`}>{p.author.initials}</span>
-              <div className="flex-1 min-w-0"><p className="text-sm font-semibold truncate">{p.author.name}{p.author.verified && " ✔"}</p><p className="text-xs text-gray-500">{p.author.handle} · {p.author.timeAgo}</p></div>
-              <button onClick={() => report(p)} className="icon-btn" title="Report post"><Flag size={16} /></button>
-            </header>
-            {(p.mediaUrls?.[0] ?? p.mediaUrl) ? <img src={p.mediaUrls?.[0] ?? p.mediaUrl} alt="" loading="lazy" className="w-full max-h-96 object-cover bg-gray-100" /> : <div className="h-48" style={{ background: p.gradientStyle }} />}
-            <div className="p-4 space-y-2">
-              <div className="flex items-center gap-4">
-                <button onClick={() => like(p)} className={`flex items-center gap-1.5 text-sm transition ${p.isLiked ? "text-rose-500" : "text-gray-600 hover:text-rose-500"}`}>
-                  <Heart key={String(p.isLiked)} size={20} className={`${p.isLiked ? "fill-rose-500 text-rose-500 animate-pop" : ""}`} />{p.likes}
-                </button>
-                <span className="flex items-center gap-1.5 text-sm text-gray-600"><MessageCircle size={20} />{p.comments.length}</span>
-                <button onClick={() => bookmark(p)} className="ml-auto icon-btn" title="Bookmark"><Bookmark size={20} className={bookmarked[p.id] ? "fill-indigo-600 text-indigo-600" : ""} /></button>
-              </div>
-              {p.caption && <p className="text-sm leading-relaxed">{p.caption}</p>}
-              {!!p.tags.length && <p className="flex flex-wrap gap-1.5">{p.tags.map((t) => <Link key={t} to={`/explore/${t.replace(/^#/, "")}`} className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-600 transition hover:bg-indigo-100">{t}</Link>)}</p>}
-              {p.comments.map((c) => <p key={c.id} className="text-sm"><b>{c.user}</b> {c.text}</p>)}
-              <div className="flex gap-2 pt-1">
-                <input value={drafts[p.id] || ""} onChange={(e) => setDrafts((d) => ({ ...d, [p.id]: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && comment(p)} placeholder="Add a comment…" className="flex-1 rounded-full border border-gray-200 bg-gray-50 px-3.5 py-2 text-sm transition focus:border-indigo-300 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100" />
-                <button onClick={() => comment(p)} className="rounded-full px-3 text-sm font-semibold text-indigo-600 transition hover:bg-indigo-50">Post</button>
-              </div>
-            </div>
-          </article>
+        {loading && !posts.length && <><PostSkeleton /><PostSkeleton /></>}
+        {!loading && !error && !posts.length && (
+          <EmptyState
+            emoji={feed === "following" ? "👥" : "✍️"}
+            title={feed === "following" ? "Your following feed is quiet" : "No posts yet"}
+            hint={feed === "following" ? "Follow a few people and their posts will show up here." : "Share something and it will appear right here."}
+            action={feed === "following"
+              ? <Link to="/search" className="mt-1 text-xs font-semibold text-indigo-600 hover:underline">Find people to follow</Link>
+              : <button onClick={() => setCreating(true)} className="mt-1 text-xs font-semibold text-indigo-600 hover:underline">Create the first post</button>}
+          />
+        )}
+        {posts.map((p, i) => (
+          <motion.div
+            key={p.id}
+            initial={reduce ? false : { opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, delay: reduce ? 0 : Math.min(i, 6) * 0.035 }}
+          >
+            <PostCard post={p} onChange={onChange} onDelete={onDeleted} onHidden={onDeleted} />
+          </motion.div>
         ))}
         {cursor && <button onClick={() => load(cursor)} disabled={loading} className="w-full rounded-xl border bg-white py-2 text-sm">{loading ? "Loading…" : "Load more"}</button>}
       </div>

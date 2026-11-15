@@ -49,6 +49,11 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY (PEM, \n-escaped)}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      # Authoritative block lookup (POST /users/blocks/check) used to close the event-replica race.
+      USER_SERVICE_URL: ${USER_SERVICE_URL:-http://user-service:3003}
+      # Chat attachments must point inside this bucket (same allowlist as posts).
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
+      MINIO_BUCKET: ${MINIO_BUCKET:-socialpulse-media}
     depends_on:
       mongodb: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -63,6 +68,27 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?set JWT_PRIVATE_KEY (PEM, \n-escaped)}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY}
+      # Browser origin used to build verification / reset links. Never derived from the request Host.
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:5173}
+      # Optional SMTP transport for transactional mail. With no SMTP_HOST the service runs in
+      # console mode (no mail is sent) - see AUTH_DEV_RETURN_LINKS in .env.example.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      MAIL_FROM: ${MAIL_FROM:-SocialPulse <no-reply@socialpulse.local>}
+      AUTH_DEV_RETURN_LINKS: ${AUTH_DEV_RETURN_LINKS:-false}
+      EMAIL_VERIFY_TTL_HOURS: ${EMAIL_VERIFY_TTL_HOURS:-24}
+      PASSWORD_RESET_TTL_MINUTES: ${PASSWORD_RESET_TTL_MINUTES:-60}
+      # Google OAuth. These MUST be present here: the image never contains a .env, so a value that
+      # is only written to user-service/.env would silently leave Google sign-in unconfigured.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID_WEB: ${GOOGLE_CLIENT_ID_WEB:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      # The OAuth state cookie can only be `Secure` over real HTTPS; localhost is plain HTTP.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
     depends_on: { postgres: { condition: service_healthy }, rabbitmq: { condition: service_healthy } }
     healthcheck: { test: ["CMD-SHELL", "wget -qO- http://localhost:3003/health || exit 1"], interval: 10s, timeout: 5s, retries: 10, start_period: 25s }
   api-gateway:
@@ -72,6 +98,10 @@ services:
       PORT: 8080
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      # Rate limits (in-memory, per gateway instance). Raise the auth limit when running the
+      # integration scripts, which exercise many login/reset calls in a row.
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-300}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
       USER_SERVICE_URL: http://user-service:3003
       CONTENT_SERVICE_URL: http://content-service:3001
       CHAT_SERVICE_URL: http://chat-service:3002
@@ -90,25 +120,36 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      # Admin ids for moderation alerts (GET /users/admins, internal only).
+      USER_SERVICE_URL: ${USER_SERVICE_URL:-http://user-service:3003}
     depends_on: { mongodb: { condition: service_healthy }, rabbitmq: { condition: service_healthy } }
     healthcheck: { test: ["CMD-SHELL", "wget -qO- http://localhost:3004/health || exit 1"], interval: 10s, timeout: 5s, retries: 10, start_period: 15s }
   minio:
-    image: localstack/localstack:2.3.0
-    environment: { SERVICES: s3, AWS_DEFAULT_REGION: us-east-1 }
-    ports: ["9000:4566"]
-    volumes: ["minio_data:/var/lib/localstack"]
-    healthcheck: { test: ["CMD-SHELL", "curl -f http://localhost:4566/_localstack/health || exit 1"], interval: 10s, timeout: 5s, retries: 10 }
+    # Real MinIO (disk-backed), so uploaded post images and avatars survive container recreation.
+    # LocalStack's community build keeps S3 only in memory - every media URL 404'd after a
+    # restart - and the historical minio/minio image is no longer published on Docker Hub.
+    image: bitnamilegacy/minio:latest
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_DEFAULT_BUCKETS: socialpulse-media
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["minio-data:/bitnami/minio/data"]
+    healthcheck: { test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"], interval: 10s, timeout: 5s, retries: 15, start_period: 15s }
   media-service:
     build: ./media-service
     expose: ["3005"]
     environment:
       PORT: 3005
       MINIO_ENDPOINT: minio
-      MINIO_PORT: 4566
+      MINIO_PORT: 9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: socialpulse-media
       MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
+      # Browser uploads hit the bucket directly with a presigned POST, so the bucket must allow
+      # these origins or every in-app upload fails with "Failed to fetch".
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     depends_on: { minio: { condition: service_healthy } }
   frontend:
     build:
@@ -126,4 +167,4 @@ volumes:
   mongo_data: {}
   redis_data: {}
   rabbitmq_data: {}
-  minio_data: {}
+  minio-data: {}

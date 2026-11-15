@@ -2,8 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
 import { Notification, NotificationDoc } from './notification.schema';
-import { Draft, decodeCursor, encodeCursor, toDrafts } from './rules';
+import { Draft, adminDrafts, decodeCursor, encodeCursor, toDrafts } from './rules';
 import { NotificationsGateway } from './notifications.gateway';
+import { BlocksService } from './blocks/blocks.service';
 
 export const shape = (n: NotificationDoc) => ({
   id: String(n._id), type: n.type, actorId: n.actorId, actorIds: n.actorIds, count: n.count, targetId: n.targetId, preview: n.preview,
@@ -11,9 +12,32 @@ export const shape = (n: NotificationDoc) => ({
 });
 @Injectable()
 export class NotificationsService {
-  constructor(@InjectModel(Notification.name) private model: Model<Notification>, private ws: NotificationsGateway) {}
+  constructor(@InjectModel(Notification.name) private model: Model<Notification>, private ws: NotificationsGateway, private blocks: BlocksService) {}
 
-  async handleEvent(key: string, payload: any) { for (const d of toDrafts(key, payload)) await this.create(d); }
+  /** Admin ids move rarely; a 30s cache keeps a report burst from hammering user-service. */
+  private adminCache: { ids: string[]; at: number } = { ids: [], at: 0 };
+  private async admins(): Promise<string[]> {
+    if (Date.now() - this.adminCache.at < 30_000) return this.adminCache.ids;
+    const base = process.env.USER_SERVICE_URL || 'http://user-service:3003';
+    try {
+      const res = await fetch(`${base}/users/admins`, { signal: AbortSignal.timeout(2500) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body: any = await res.json();
+      const ids: string[] = body?.data?.items ?? body?.items ?? [];
+      this.adminCache = { ids: Array.isArray(ids) ? ids.map(String) : [], at: Date.now() };
+    } catch { /* keep the last known admins; a lookup outage must not drop the notification */ }
+    return this.adminCache.ids;
+  }
+
+  async handleEvent(key: string, payload: any) {
+    // `report.created` has no recipient in the event: it goes to whoever holds the admin role.
+    const drafts = key === 'report.created' ? adminDrafts(payload, await this.admins()) : toDrafts(key, payload);
+    for (const d of drafts) {
+      // Block policy (mutual): never notify one party about activity from the other.
+      if (await this.blocks.eitherWay(d.recipientId, d.actorId)) continue;
+      await this.create(d);
+    }
+  }
 
   /** Likes group per post (distinct actors); messages group per conversation (count). Only unread groups are merged. */
   async create(d: Draft) {
