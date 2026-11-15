@@ -258,7 +258,7 @@ ones you don't need. (`batch.json` is a bare `{"ids": []}` payload.)
   security, surprising for clients and for API probing.
 - Swagger (`/api/docs`) is only reachable on each service's own port, not through the gateway —
   matches the README, just easy to trip over.
-- `PROGRESS.md` is stale in the project's favour: it says the chat `BlocksModule` is "not yet wired
+- `docs/PROGRESS-LOG.md` is stale in the project's favour: it says the chat `BlocksModule` is "not yet wired
   into code", but it **is** wired (`assertCanMessage` in `MessagesService.send`, `hiddenFor` filters
   conversation lists). `docs/KNOWN_LIMITS.md` mentions neither this report's bugs nor the WSL note
   that no longer applies.

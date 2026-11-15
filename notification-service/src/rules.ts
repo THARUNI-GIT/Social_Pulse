@@ -2,7 +2,7 @@ export type NType = 'like' | 'comment' | 'share' | 'follow' | 'message' | 'moder
 export interface Draft { recipientId: string; type: NType; actorId: string; targetId?: string; groupKey?: string; preview?: string }
 const clip = (s?: string) => (s ? (s.length > 80 ? s.slice(0, 77) + '...' : s) : undefined);
 /** Maps an app.events message to zero or more notification drafts. Self-notifications are dropped.
- *  comment.created / message.sent payloads were not in the provided code: field names below are tolerant guesses (see PROGRESS.md). */
+ *  comment.created / message.sent payloads were not in the provided code: field names below are tolerant guesses (see docs/PROGRESS-LOG.md). */
 export function toDrafts(key: string, p: any): Draft[] {
   const out: Draft[] = [];
   switch (key) {

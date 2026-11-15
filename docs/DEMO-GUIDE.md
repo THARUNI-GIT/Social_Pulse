@@ -3,7 +3,7 @@
 Last verified: 2026-10-15, on branch `main`, gateway published on **http://localhost:8180**
 (host port 8080 is taken by an unrelated Java/Jenkins service; `GATEWAY_PORT=8180` in `.env`).
 
-> Superseded documents: `DEMO-READINESS.md` and `FINAL-REPORT.md` were written before the
+> Superseded documents: `docs/DEMO-READINESS.md` and `docs/SESSION-NOTES.md` were written before the
 > Google OAuth work landed and are partly out of date. This file is authoritative.
 
 ## 1. Start everything
