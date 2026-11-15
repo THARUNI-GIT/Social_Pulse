@@ -1,17 +1,29 @@
 # SocialPulse
 
-A social network with a real-time chat, built as **microservices behind a single API gateway**, with a React (Vite) frontend, two PostgreSQL databases, MongoDB, Redis, RabbitMQ and S3-compatible object storage.
+A social network with real-time chat: six Node services behind one API gateway, a React frontend, two Postgres databases, Mongo, Redis, RabbitMQ and S3-compatible object storage.
 
-> **Version 1.0** — first complete release. See [CHANGELOG-style release notes](docs/IMPLEMENTATION-2026-10-14.md) and the demo walkthrough below.
+[![CI](https://github.com/THARUNI-GIT/Social_Pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/THARUNI-GIT/Social_Pulse/actions/workflows/ci.yml)
 
----
+## Screenshots
+
+![Feed, chat, profile and admin screens](docs/screenshots/demo.gif)
+
+| File | Screen |
+|---|---|
+| `demo.gif` | The four screens below, in sequence |
+| `feed.png` | For you timeline with a post image |
+| `chat.png` | Direct chat with delivery and read ticks |
+| `profile.png` | Profile, follower counts and post grid |
+| `admin.png` | Report queue holding a post report |
+
+Captured from a local run on the demo data. Retake them if the layout changes.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
   FE[Frontend :5173] -->|REST + WebSocket| GW[api-gateway :8080]
-  FE -->|presigned upload / public images| MINIO[(MinIO :9000)]
+  FE -->|presigned upload / image reads| MINIO[(MinIO :9000)]
   GW --> US[user-service :3003]
   GW --> CS[content-service :3001]
   GW --> CH[chat-service :3002]
@@ -29,190 +41,116 @@ flowchart LR
   MQ -- blocks --> CH
 ```
 
-- The gateway is the **only** backend port exposed. It verifies the RS256 access token, strips client-supplied `x-user-id` / `x-user-roles`, injects trusted ones, applies per-route rate limits and a CORS allowlist, and proxies REST plus Socket.IO (`/socket.io`, `/notifications/socket.io`).
-- Services own their data. Cross-service effects travel as domain events (`user.followed`, `user.blocked`, `post.liked`, `comment.created`, `message.sent`, …) consumed by content, chat and notification services.
-- Media never flows through the services: the browser asks media-service for a **presigned POST policy** (which pins content-type and size), uploads straight to MinIO, then stores the resulting public URL on the post/profile. Content-service rejects any `mediaUrls` outside its own bucket.
+The gateway is the only published backend port. It verifies the access token, then proxies REST and Socket.IO to the services. Services own their data and talk to each other through domain events on RabbitMQ.
 
 ## Features
 
-**Accounts & security**
-- Register / login / logout, RS256 access tokens (15 min) and rotating refresh tokens (hashed, reuse revokes all sessions).
-- Email verification with single-use, expiring, hashed tokens + resend cooldown.
-- Forgot / reset password, and change password from Settings (signs out other devices).
-- Google sign-in (OAuth 2.0 authorization code + PKCE) — enabled automatically when client credentials are configured.
-- Admin suspension: suspended accounts are rejected per request by the gateway (`401 SUSPENDED`), not only at login.
-- Blocking enforced server-side on REST **and** websockets; feed, profiles, search and DMs all respect it.
+Accounts and access
+- Register, login, logout with JWT access tokens and rotating refresh tokens.
+- Email verification with single-use tokens, resend cooldown, password reset, change password.
+- Google sign-in using OAuth 2.0 with PKCE, when client credentials are set.
+- Admin suspension that takes effect on the next request, not just at login.
+- Blocking enforced on REST and websocket paths.
 
-**Social feed**
-- For-you and Following timelines with cursor pagination.
-- Posts with images and video, hashtags, single-post pages, edit caption, delete.
-- Likes (reaction picker in chat), comments with counts, bookmarks, share-to-chat.
-- Post/comment reporting with reasons, and an admin moderation queue (remove, keep, restore).
+Feed
+- For you and Following timelines with cursor pagination.
+- Posts with image or video, hashtags, edit caption, delete, post pages.
+- Likes, comments, bookmarks, share to chat, reporting with reasons.
 
-**Profiles & discovery**
-- Profile with avatar (uploaded to object storage), display name, bio, follower/following counts and lists.
-- Follow / unfollow, message button, block from a profile.
-- Search: people and posts (case-insensitive substring), trending hashtags, `#tag` + Enter opens a hashtag gallery.
+Profiles and discovery
+- Avatar upload, bio, follower and following lists, follow buttons.
+- Search for people and posts, trending hashtags, hashtag feeds.
 
-**Chat (Socket.IO)**
-- Direct and group conversations: create, rename, add/remove members, leave, system events for every change.
-- Message persistence before acknowledgement, `sent → delivered → read` ticks, typing indicators, online/last-seen presence (Redis-backed with pruning for multi-tab), unread badges.
-- Emoji reactions, image attachments, share a post into a chat, blocked-contact notices.
+Chat
+- Direct and group conversations with member management and system events.
+- Message persistence before the send is acknowledged, delivery and read ticks, typing, presence, unread badges.
+- Reactions, image attachments, sharing a post into a conversation.
 
-**Notifications**
-- Live bell badge over a dedicated Socket.IO namespace; grouped likes, comments, shares, follows, messages, moderation outcomes and admin report alerts.
+Notifications and moderation
+- Live bell with grouped likes, comments, follows, messages and moderation outcomes.
+- Report queue with remove, keep and restore, plus account suspension.
 
-**Media**
-- Presigned uploads to MinIO with per-kind limits: avatar 2 MB (jpeg/png/webp), post 8 MB (+gif), video 50 MB (mp4/webm/mov/ogv).
-- Bucket policy + CORS configured by media-service on startup so browser uploads work.
-- Disk-backed object storage: avatars and post media survive container restarts.
+Media
+- Presigned uploads to MinIO with per-kind limits, configured by media-service on startup.
 
-## Technology stack
+## Tech stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18, Vite, Tailwind CSS, framer-motion, react-router, socket.io-client, axios, lucide-react |
-| API gateway | Node 20, Fastify, `@fastify/http-proxy`, JWT verification, in-memory rate limiting |
-| Services | NestJS 10, Prisma (user/content), Mongoose (chat/notification), Zod/class-validator DTOs |
-| Data | PostgreSQL 16 (two databases), MongoDB 7, Redis 7, RabbitMQ 3, MinIO (S3) |
-| Auth | RS256 JWT, argon2 password hashing, OAuth 2.0 + PKCE (Google) |
-| Infra | Docker Compose, multi-stage Dockerfiles, nginx (frontend), GitHub Actions CI |
+| Frontend | React 18, Vite, Tailwind CSS, react-router, socket.io-client, axios, framer-motion |
+| Gateway | Node 20, Fastify, JWT verification, in-memory rate limits |
+| Services | NestJS 10, Prisma, Mongoose, class-validator |
+| Data | PostgreSQL 16, MongoDB 7, Redis 7, RabbitMQ 3, MinIO |
+| Auth | RS256 JWT, argon2, OAuth 2.0 with PKCE |
+| Runtime | Docker Compose, multi-stage Dockerfiles, nginx, GitHub Actions |
 
-## Repository layout
+## Quick start
 
-```
-.
-├── api-gateway/            # Fastify gateway: auth, proxying, rate limits, WS upgrade
-├── user-service/           # NestJS: accounts, auth, follows, blocks, admin (Prisma/Postgres)
-├── content-service/        # NestJS: posts, comments, reactions, bookmarks, moderation (Prisma/Postgres)
-├── chat-service/           # NestJS: conversations, messages, presence, blocks (Mongo/Redis/Socket.IO)
-├── notification-service/   # NestJS: event-driven notifications (Mongo/Socket.IO)
-├── media-service/          # NestJS: presigned upload policies for MinIO
-├── socialpulse/            # React frontend (+ scripts/ for demo data and feature checks)
-├── seed/                   # legacy demo seeding and Postgres init script
-├── scripts/                # key generation, E2E suites, backups, cleanup planner
-├── docker-compose.yml      # full local stack
-├── docs/                   # implementation notes and known limits
-└── CONTRACTS.md            # cross-service API/event contracts
-```
-
-## Quick start (Docker)
-
-Prerequisites: Docker Desktop with Compose v2, Node.js 20+ (only for the seed scripts), and a free port 8080.
+Requirements: Docker with Compose v2, Node 20 for the seed scripts, and port 8080 free.
 
 ```sh
 cp .env.example .env
-sh scripts/gen-keys.sh           # generates the RS256 keypair into .env
+sh scripts/gen-keys.sh
 docker compose up -d --build
 ```
 
-Compose brings up Postgres, MongoDB, Redis, RabbitMQ, MinIO and all six Node services plus the nginx-served frontend. Prisma migrations run automatically on service start (`prisma migrate deploy` in the container CMD).
+Migrations run automatically when the Prisma containers start.
 
 | URL | What |
 |---|---|
 | http://localhost:5173 | Web app |
-| http://localhost:8080 | API gateway (`/health`, `/api/docs` per service on its own port) |
-| http://localhost:9000 | Object storage (browser uploads / public media) |
-| http://localhost:9001 | MinIO console (`minioadmin` / `minioadmin`) |
-| http://localhost:15672 | RabbitMQ management (`guest` / `guest`) |
+| http://localhost:8080 | API gateway |
+| http://localhost:9000 | Object storage |
+| http://localhost:9001 | MinIO console |
+| http://localhost:15672 | RabbitMQ console |
 
-If port 8080 is taken, set `GATEWAY_PORT` and `PUBLIC_API_URL` in `.env` (e.g. `8180` / `http://localhost:8180`) **and rebuild the frontend**, because the API URL is baked into the bundle at build time:
+If 8080 is taken, set `GATEWAY_PORT` and `PUBLIC_API_URL` in `.env` and rebuild the frontend with `docker compose up -d --build frontend`, because the API URL is compiled into the bundle.
+
+Demo accounts exist only in your local database: `alice`, `bob`, `carol`, `dave`, `emma`, `frank`, and `admin`, all with password `password123`. The walkthrough is in [docs/DEMO.md](docs/DEMO.md).
+
+Configuration reference: [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md).
+
+## Tests
 
 ```sh
-docker compose up -d --build frontend
+cd user-service        && npm test   # 33 tests
+cd content-service     && npm test   # 19 tests
+cd chat-service        && npm test   # 22 tests
+cd notification-service && npm test  # 9 tests
+cd media-service       && npm test   # 11 tests
+cd api-gateway         && npm test   # 12 tests
+cd socialpulse         && npm run build
 ```
 
-## Environment setup
+106 tests across the six services. These counts are from a run on this repository, not estimates.
 
-Everything is driven by the root `.env` (created from `.env.example`). Per-service examples live next to each service (`*/​.env.example`) and are only needed when running a service outside Docker.
-
-Key variables:
-
-| Variable | Purpose |
-|---|---|
-| `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` | RS256 keypair, PEM with `\n` escapes (`scripts/gen-keys.sh` fills these) |
-| `GATEWAY_PORT`, `PUBLIC_API_URL` | Published gateway port and the browser-facing copy used by the frontend build |
-| `APP_ORIGIN` | Public web origin used to build verification / reset links (never derived from the request Host) |
-| `CORS_ORIGINS` | Comma-separated browser origins allowed by the gateway, chat gateway and media bucket |
-| `MINIO_PUBLIC_URL`, `MINIO_BUCKET` | Browser-facing storage URL and the single bucket all media must live in |
-| `SMTP_*`, `MAIL_FROM` | Transactional email; with no `SMTP_HOST` the service runs in console mode and sends nothing |
-| `GOOGLE_CLIENT_ID` / `_SECRET` / `GOOGLE_REDIRECT_URI` | Google sign-in; leave blank to disable the button |
-| `RATE_LIMIT_MAX`, `AUTH_RATE_LIMIT_MAX` | Gateway limits (300/min general, 10/min on `/auth`) |
-| `AUTH_DEV_RETURN_LINKS` | Local-only: return `devLink` in verification/reset responses |
-
-**Never commit `.env`, `.keys/`, or any credential.** They are git-ignored; rotate any secret that was ever shared outside your machine.
-
-## Database setup
-
-- `postgres` starts with `content_db`; `seed/init-user-db.sql` creates `user_db` on first volume init.
-- Schemas live in `user-service/prisma/schema.prisma` and `content-service/prisma/schema.prisma`.
-- Migrations are applied automatically by the containers. To run them manually:
+With the stack running:
 
 ```sh
-docker compose exec user-service npx prisma migrate deploy
-docker compose exec content-service npx prisma migrate deploy
-```
-
-- MongoDB databases (`chat_db`, `notification_db`) are created on first write; Redis and RabbitMQ need no schema.
-
-## Demo data
-
-The frontend ships its own seeding tooling (generates images locally, uploads them through the real presign flow):
-
-```sh
-bash socialpulse/scripts/reset-demo-data.sh      # backs up, then clears posts/chat/notifications
-node socialpulse/scripts/seed-demo.mjs           # 6 people with avatars, 12 posts, chats, 1 report
-```
-
-Demo accounts (password `password123`): `alice`, `bob`, `carol`, `dave`, `emma`, `frank`, and `admin` (administrator). The older `seed/seed.sh` path still works for a minimal data set.
-
-Suggested demo flow: sign in as `alice` → create a post with an image → like/comment/bookmark → share it into a chat → open an incognito window as `bob` to show live notifications, typing, presence and read receipts → report a post → switch to `admin` to resolve it (remove/restore) and suspend an account → search people/posts and open a trending hashtag.
-
-## Local development (without Docker)
-
-```sh
-# frontend
-cd socialpulse && npm install && npm run dev        # VITE_API_URL=http://localhost:8080
-
-# any service (its own .env + infrastructure from compose)
-cd user-service && npm install && npm run start:dev
-```
-
-Keep Postgres/Mongo/Redis/RabbitMQ/MinIO running via `docker compose up -d postgres mongodb redis rabbitmq minio`.
-
-## Tests and checks
-
-```sh
-cd user-service        && npm test        # auth, users, follows, blocks
-cd content-service     && npm test        # posts, visibility, moderation, media allowlist
-cd chat-service        && npm test        # messages, presence, blocks
-cd media-service       && npm test        # upload rules
-cd notification-service && npm test       # notification rules
-cd api-gateway         && npm test        # auth middleware, proxying
-cd socialpulse         && npm run build   # production frontend build
-```
-
-With the stack running and demo data seeded:
-
-```sh
-GATEWAY=http://localhost:8080 node scripts/e2e.mjs                # end-to-end API checks
-GATEWAY=http://localhost:8080 node scripts/verify-demo.mjs        # demo-readiness checks
+GATEWAY=http://localhost:8080 node scripts/e2e.mjs
 GATEWAY=http://localhost:8080 node socialpulse/scripts/verify-features.mjs
 ```
 
-Auth endpoints are rate-limited (10/min per IP); raise `AUTH_RATE_LIMIT_MAX` for bulk script runs, and reseed after running the write-heavy suites.
+The scripts create posts and accounts, so re-seed after running them.
 
-## Operational notes
+## Design decisions
 
-- Named volumes keep data across `docker compose down`: `postgres_data`, `mongo_data`, `redis_data`, `rabbitmq_data`, `minio-data`. **`docker compose down -v` deletes all of it, including every uploaded image.**
-- Uploaded media is public-read by design (bucket policy grants `s3:GetObject`); uploads and deletes still require signed requests.
-- `scripts/backup-databases.sh` dumps Postgres and Mongo; `scripts/cleanup-plan.mjs` prints a dry-run inventory before any account cleanup.
-- Email and Google sign-in are the only features that need external credentials. Without them the UI shows an honest setup notice rather than faking success.
+- The gateway strips any client-supplied `x-user-id` and `x-user-roles` headers and injects its own after verifying the token. A caller cannot claim another identity by adding headers.
+- Refresh tokens are stored hashed and rotated on every use. Reusing an old token revokes all sessions for that user.
+- Media bypasses the services. The browser asks media-service for a presigned POST policy, uploads straight to MinIO, and content-service only accepts URLs inside its own bucket.
+- Follows and blocks are published as events and replicated into content and chat. Message sending still calls user-service for an authoritative block check, which covers the replica lag.
+- A message is marked delivered when the recipient's socket acknowledges it, not when it is written. Read receipts follow the recipient opening the conversation.
+- The frontend bakes the API URL at build time, which keeps the bundle static and served by nginx, at the cost of rebuilding the image when the port changes.
 
-## Known limits
+## Documentation
 
-See [docs/KNOWN_LIMITS.md](docs/KNOWN_LIMITS.md). Highlights: no video transcoding, notifications are best-effort (at-least-once), and the moderation queue is intentionally simple (no appeal workflow).
+- [docs/DEMO.md](docs/DEMO.md): demo walkthrough and reset commands.
+- [docs/OPERATIONS.md](docs/OPERATIONS.md): volumes, migrations, ports, backups, rate limits.
+- [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md): every environment variable.
+- [CONTRACTS.md](CONTRACTS.md): API and event contracts between services.
+- [docs/KNOWN_LIMITS.md](docs/KNOWN_LIMITS.md): what is not implemented.
+- [CHANGELOG.md](CHANGELOG.md): release history.
 
 ## License
 
-Not licensed for redistribution; add a license file before publishing publicly.
+MIT, see [LICENSE](LICENSE).

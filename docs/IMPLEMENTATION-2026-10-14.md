@@ -131,7 +131,7 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env; sh scripts/gen-keys.sh
 docker compose up -d --build
 
 # 3. Seed demo data (also marks demo accounts email-verified)
-sh seed/seed.sh
+node socialpulse/scripts/seed-demo.mjs
 
 # 4. Verify
 $env:GATEWAY = "http://localhost:8180"     # 8080 if Jenkins is not running
