@@ -49,10 +49,7 @@ Writes a Postgres dump and a Mongo archive into `backups/`, which is git-ignored
 
 ## Seeding
 
-Two seeding paths exist:
-
-- `socialpulse/scripts/seed-demo.mjs` with `socialpulse/scripts/reset-demo-data.sh`: current demo data, uploads real images.
-- `seed/seed.sh` with `seed/seed.mjs`: older, text-only seeding kept for compatibility.
+`socialpulse/scripts/seed-demo.mjs` creates the demo data and uploads real images through the same presigned flow the browser uses. `socialpulse/scripts/reset-demo-data.sh` wipes the volumes and seeds again from scratch.
 
 `seed/init-user-db.sql` is not optional: compose mounts it so the `user_db` database exists on the first Postgres start.
 

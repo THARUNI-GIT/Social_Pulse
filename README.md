@@ -6,23 +6,17 @@ A social network with real-time chat: six Node services behind one API gateway, 
 
 ## Screenshots
 
-Add these files to `docs/screenshots/` and the images below start rendering.
+![Feed, chat, profile and admin screens](docs/screenshots/demo.gif)
 
 | File | Screen |
 |---|---|
-| `demo.gif` | 20 second tour: feed, compose, chat |
-| `feed.png` | Feed with images and hashtags |
-| `chat.png` | Direct chat with typing and read ticks |
-| `profile.png` | Profile with follower lists |
-| `admin.png` | Moderation queue |
+| `demo.gif` | The four screens below, in sequence |
+| `feed.png` | For you timeline with a post image |
+| `chat.png` | Direct chat with delivery and read ticks |
+| `profile.png` | Profile, follower counts and post grid |
+| `admin.png` | Report queue holding a post report |
 
-<!--
-![Feed](docs/screenshots/feed.png)
-![Chat](docs/screenshots/chat.png)
-![Profile](docs/screenshots/profile.png)
-![Admin](docs/screenshots/admin.png)
-![Demo](docs/screenshots/demo.gif)
--->
+Captured from a local run on the demo data. Retake them if the layout changes.
 
 ## Architecture
 
