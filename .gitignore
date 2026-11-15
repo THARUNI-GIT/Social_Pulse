@@ -19,3 +19,14 @@ backups/
 
 # throwaway probes left by debugging sessions
 /tmp-*
+
+# machine-specific compose override (kept locally, not shared)
+docker-compose.override.yml
+
+# environment variants; templates stay tracked
+.env.*
+!.env.example
+
+# local media dumps and logs
+uploads/
+*.log
